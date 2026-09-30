@@ -332,7 +332,7 @@ export async function buildWebBootstrapResponse(env: Env): Promise<WebBootstrapR
     defaultKdfIterations: LIMITS.auth.defaultKdfIterations,
     jwtUnsafeReason,
     jwtSecretMinLength: LIMITS.auth.jwtSecretMinLength,
-    registrationInviteRequired: userCount > 0,
+    registrationInviteRequired: true,
     webAuthnAllowedOrigins: getConfiguredWebAuthnAllowedOrigins(env),
     websiteIconsEnabled: isWebsiteIconProxyEnabled(env),
   };

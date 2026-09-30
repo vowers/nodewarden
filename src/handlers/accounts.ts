@@ -7,6 +7,7 @@ import { jsonResponse, errorResponse } from '../utils/response';
 import { generateUUID } from '../utils/uuid';
 import { LIMITS } from '../config/limits';
 import { isStoredApiKeyHash } from '../utils/api-key';
+import { validBootstrapInvite } from '../utils/bootstrap-invite';
 import { findMatchingTotpCounter, isTotpEnabled } from '../utils/totp';
 import { createRecoveryCode, recoveryCodeEquals } from '../utils/recovery-code';
 import { buildAccountKeys } from '../utils/user-decryption';
@@ -292,6 +293,12 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
   const inviteCode = (body.inviteCode || '').trim();
   const masterPasswordHint = normalizeMasterPasswordHint(body.masterPasswordHint);
 
+  // Fail closed until the owner supplies the separately delivered setup code.
+  const userCount = await storage.getUserCount();
+  if (userCount === 0 && !validBootstrapInvite(body.inviteCode, env.BOOTSTRAP_INVITE_CODE)) {
+    return errorResponse('A valid initialization invite code is required', 403);
+  }
+
   if (!email || !masterPasswordHash || !key) {
     return errorResponse('Email, masterPasswordHash, and key are required', 400);
   }
@@ -350,7 +357,6 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
     updatedAt: now,
   };
 
-  const userCount = await storage.getUserCount();
   if (userCount === 0) {
     user.role = 'admin';
     const created = await storage.createFirstUser(user);

@@ -1,0 +1,76 @@
+name: Update deployed NodeWarden
+
+on:
+  schedule:
+    - cron: '57 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nodewarden-stable-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.repository == 'vowers/nodewarden'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: production
+          fetch-depth: 0
+      - name: Merge latest official stable release
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_DEPLOY: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release=$(gh api repos/shuaiplus/nodewarden/releases/latest)
+          printf '%s' "$release" | jq -e '.draft == false and .prerelease == false' > /dev/null
+          tag=$(printf '%s' "$release" | jq -r '.tag_name')
+          [[ "$tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Unexpected release tag'; exit 1; }
+          git remote add release-upstream https://github.com/shuaiplus/nodewarden.git
+          git fetch --no-tags release-upstream "refs/tags/$tag"
+          target=$(git rev-parse 'FETCH_HEAD^{commit}')
+          changed=false
+          if ! git merge-base --is-ancestor "$target" HEAD; then
+            git config user.name 'nodewarden-updater[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git merge --no-edit --no-ff "$target" -m "chore: update NodeWarden to $tag"
+            changed=true
+          fi
+          # Both the updater and Workers Builds reject loss of the setup guard.
+          grep -Fq 'userCount === 0 && !validBootstrapInvite(body.inviteCode, env.BOOTSTRAP_INVITE_CODE)' src/handlers/accounts.ts
+          grep -Fq 'registrationInviteRequired: true' src/router-public.ts
+          grep -Fq '9649969c-7dba-40ce-8277-13f00e1e8d4e' wrangler.toml
+          if [ "$changed" = true ]; then
+            git push origin HEAD:production
+          fi
+          deploy=false
+          if [ "$changed" = true ] || [ "$FORCE_DEPLOY" = true ]; then deploy=true; fi
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+          {
+            echo '### NodeWarden stable update'
+            echo "Release: $tag"
+            echo "Upstream commit: $target"
+            echo "Production commit: $(git rev-parse HEAD)"
+            echo "Updated: $changed; deployment requested: $deploy"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Trigger Cloudflare Workers Build
+        if: steps.sync.outputs.deploy == 'true'
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.NODEWARDEN_CLOUDFLARE_DEPLOY_HOOK_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOOK_URL"
+          response=$(curl --fail-with-body --silent --show-error --retry 2 -X POST "$DEPLOY_HOOK_URL")
+          printf '%s' "$response" | jq -e '.success == true' > /dev/null
+          build=$(printf '%s' "$response" | jq -r '.result.build_uuid // empty')
+          echo "Cloudflare build requested: $build" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Check the Cloudflare build result to confirm deployment.' >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,19 @@
 name = "nodewarden"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
+keep_vars = true
+workers_dev = true
+preview_urls = false
+
+[secrets]
+required = [ "JWT_SECRET", "BOOTSTRAP_INVITE_CODE" ]
+
+[observability]
+enabled = true
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.01
 
 [build]
 command = "npm run build"
@@ -17,6 +30,7 @@ crons = [ "*/5 * * * *" ]
 [[d1_databases]]
 binding = "DB"
 database_name = "nodewarden-db"
+database_id = "9649969c-7dba-40ce-8277-13f00e1e8d4e"
 
 [[durable_objects.bindings]]
 name = "NOTIFICATIONS_HUB"

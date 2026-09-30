@@ -1,5 +1,7 @@
 name: Update deployed NodeWarden
 
+# This workflow lives on the default production branch and follows stable releases only.
+
 on:
   schedule:
     - cron: '57 2 * * *'
